@@ -1,32 +1,45 @@
 from fastapi import FastAPI, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 import json
 
 app = FastAPI()
 
-# HTTP CORS (for regular API calls)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"]
-)
+# 👇 THIS IS THE CRUCIAL MISSING PIECE
+@app.get("/")
+async def root():
+    return PlainTextResponse("Server is alive.")
 
-# WebSocket CORS (critical for Retell)
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
-    # Explicitly allow all origins for WebSocket
     await websocket.accept()
-    
     try:
-        data = await websocket.receive_text()
-        print("Received:", data)  # Check Render logs
-        
-        await websocket.send_text(json.dumps({
-            "role": "assistant",
-            "content": "Hi, I'm your AI real estate sales assistant..."
-        }))
-        
+        while True:
+            data = await websocket.receive()
+
+            if "text" in data:
+                try:
+                    parsed = json.loads(data["text"])
+                    user_input = parsed.get("content", "")
+                    print("Transcript received:", user_input)
+
+                    await websocket.send_text(json.dumps({
+                        "role": "assistant",
+                        "content": "Hi there! This is your AI agent speaking. I'm live and ready."
+                    }))
+
+                except Exception as e:
+                    print("Error parsing or responding:", e)
+
+            elif "bytes" in data:
+                print("Audio chunk received:", len(data["bytes"]), "bytes")
+
     except Exception as e:
-        print("WS Error:", e)
+        print("WebSocket error:", e)
     finally:
         await websocket.close()
+
+
+
+
+
+
