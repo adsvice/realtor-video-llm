@@ -1,15 +1,20 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import PlainTextResponse
 import json
+import openai
+import asyncio
+import os
 
 app = FastAPI()
 
-# ✅ Required for Render to keep your app alive
+# ✅ Keep Render alive
 @app.get("/")
 async def root():
     return PlainTextResponse("Server is alive.")
 
-# ✅ WebSocket endpoint for Retell
+# 🔐 OpenAI key from environment or hardcoded
+openai.api_key = os.getenv("OPENAI_API_KEY", "sk-...REPLACE_ME...")
+
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -17,23 +22,43 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive()
 
-            # Handle transcript messages from Retell
             if "text" in data:
                 try:
                     parsed = json.loads(data["text"])
                     user_input = parsed.get("content", "")
                     print("Transcript received:", user_input)
 
-                    # 🔊 Hardcoded voice test response
+                    # 🔥 Stream GPT-4o response
+                    response_stream = await asyncio.wait_for(
+                        openai.ChatCompletion.acreate(
+                            model="gpt-4o",
+                            messages=[
+                                {"role": "system", "content": "You are a persuasive real estate AI voice agent. Speak clearly, confidently, and ask questions to qualify leads."},
+                                {"role": "user", "content": user_input}
+                            ],
+                            stream=True
+                        ),
+                        timeout=10
+                    )
+
+                    async for chunk in response_stream:
+                        if "choices" in chunk:
+                            delta = chunk["choices"][0]["delta"]
+                            if "content" in delta:
+                                await websocket.send_text(json.dumps({
+                                    "role": "assistant",
+                                    "content": delta["content"]
+                                }))
+
+                except asyncio.TimeoutError:
+                    print("⏳ GPT-4o timed out")
                     await websocket.send_text(json.dumps({
                         "role": "assistant",
-                        "content": "Hi there! This is your AI agent speaking. I'm live and ready."
+                        "content": "Sorry, I didn’t catch that. Could you say it again?"
                     }))
-
                 except Exception as e:
-                    print("Error parsing transcript:", e)
+                    print("❌ GPT-4o error:", e)
 
-            # Handle audio chunks from Retell
             elif "bytes" in data:
                 print("Audio chunk received:", len(data["bytes"]), "bytes")
 
@@ -42,7 +67,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     finally:
         await websocket.close()
-
 
 
 
