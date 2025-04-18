@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse
 import openai
 import os
 import asyncio
+import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,12 +11,10 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
-# Root endpoint for Render
 @app.get("/", response_class=PlainTextResponse)
 async def root():
     return "✅ Render server is running."
 
-# WebSocket endpoint for Retell
 @app.websocket("/call_{call_id}")
 async def websocket_endpoint(websocket: WebSocket, call_id: str):
     await websocket.accept()
@@ -24,10 +23,10 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
     try:
         while True:
             data = await websocket.receive_text()
-            print(f"🎧 Received: {data}")
+            print(f"🎧 Received from Retell: {data}")
 
-            # LLM response
             try:
+                # OpenAI GPT streaming response
                 response_stream = await asyncio.wait_for(
                     openai.ChatCompletion.acreate(
                         model="gpt-4o",
@@ -42,7 +41,8 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
                             }
                         ],
                         stream=True
-                    ), timeout=15
+                    ),
+                    timeout=15
                 )
 
                 async for chunk in response_stream:
@@ -53,12 +53,14 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
                             print(f"📤 Sent: {content}")
 
             except Exception as e:
-                print("🔥 GPT Error:", e)
-                await websocket.send_text("Sorry, I'm having trouble right now.")
+                print("🔥 GPT-4o ERROR:", e)
+                traceback.print_exc()
+                await websocket.send_text("Sorry, I'm having trouble responding right now.")
 
     except WebSocketDisconnect:
         print(f"🔒 WebSocket disconnected: {call_id}")
     except Exception as e:
         print(f"❌ WebSocket error: {e}")
+        traceback.print_exc()
         await websocket.close()
 
