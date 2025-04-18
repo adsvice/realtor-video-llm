@@ -1,19 +1,18 @@
 from fastapi import FastAPI, WebSocket
-from fastapi.responses import PlainTextResponse
-import json
 import openai
 import asyncio
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
-# ✅ Keep Render alive
 @app.get("/")
 async def root():
-    return PlainTextResponse("Server is alive.")
-
-# 🔐 OpenAI key from environment or hardcoded
-openai.api_key = os.getenv("OPENAI_API_KEY", "sk-...REPLACE_ME...")
+    return {"message": "Server is alive."}
 
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
@@ -23,17 +22,15 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive()
 
             if "text" in data:
-                try:
-                    parsed = json.loads(data["text"])
-                    user_input = parsed.get("content", "")
-                    print("Transcript received:", user_input)
+                user_input = data["text"]
+                print("Transcript:", user_input)
 
-                    # 🔥 Stream GPT-4o response
+                try:
                     response_stream = await asyncio.wait_for(
                         openai.ChatCompletion.acreate(
                             model="gpt-4o",
                             messages=[
-                                {"role": "system", "content": "You are a persuasive real estate AI voice agent. Speak clearly, confidently, and ask questions to qualify leads."},
+                                {"role": "system", "content": "You are a top-performing AI real estate sales assistant."},
                                 {"role": "user", "content": user_input}
                             ],
                             stream=True
@@ -42,25 +39,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
 
                     async for chunk in response_stream:
-                        if "choices" in chunk:
+                        if "choices" in chunk and len(chunk["choices"]) > 0:
                             delta = chunk["choices"][0]["delta"]
                             if "content" in delta:
-                                await websocket.send_text(json.dumps({
-                                    "role": "assistant",
-                                    "content": delta["content"]
-                                }))
+                                await websocket.send_text(delta["content"])
 
-                except asyncio.TimeoutError:
-                    print("⏳ GPT-4o timed out")
-                    await websocket.send_text(json.dumps({
-                        "role": "assistant",
-                        "content": "Sorry, I didn’t catch that. Could you say it again?"
-                    }))
                 except Exception as e:
-                    print("❌ GPT-4o error:", e)
+                    print("GPT-4o failed:", e)
+                    await websocket.send_text("Sorry, I'm having trouble understanding you right now.")
 
-            elif "bytes" in data:
-                print("Audio chunk received:", len(data["bytes"]), "bytes")
+            elif isinstance(data, bytes):
+                print("Received audio chunk:", len(data), "bytes")
 
     except Exception as e:
         print("WebSocket error:", e)
