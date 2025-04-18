@@ -1,5 +1,6 @@
 fastapi
 python-dotenv
 retell-sdk
-uvicorn
+uvicorn[standard]
 openai
+
