@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 import openai
 import os
@@ -10,25 +10,23 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
-# Health check endpoint for Render
+# Root endpoint for Render
 @app.get("/", response_class=PlainTextResponse)
 async def root():
-    return "Server is alive."
+    return "✅ Render server is running."
 
 # WebSocket endpoint for Retell
 @app.websocket("/call_{call_id}")
 async def websocket_endpoint(websocket: WebSocket, call_id: str):
     await websocket.accept()
-    print(f"📞 Connected to call ID: {call_id}")
+    print(f"🔌 WebSocket connected: {call_id}")
 
     try:
-        async for data in websocket.iter_bytes():
-            print("🎧 Received audio chunk:", len(data), "bytes")
+        while True:
+            data = await websocket.receive_text()
+            print(f"🎧 Received: {data}")
 
-            # You can stream audio to Whisper here, if needed
-            # Placeholder transcript for testing
-            user_text = "Tell me about your real estate video service."
-
+            # LLM response
             try:
                 response_stream = await asyncio.wait_for(
                     openai.ChatCompletion.acreate(
@@ -36,15 +34,15 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
                         messages=[
                             {
                                 "role": "system",
-                                "content": "You are a top-performing AI real estate sales assistant. Speak clearly and concisely."
+                                "content": "You are a persuasive AI real estate sales assistant. Stay focused and concise."
                             },
                             {
                                 "role": "user",
-                                "content": user_text
+                                "content": data
                             }
                         ],
                         stream=True
-                    ), timeout=10
+                    ), timeout=15
                 )
 
                 async for chunk in response_stream:
@@ -52,14 +50,15 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
                         content = chunk["choices"][0].get("delta", {}).get("content")
                         if content:
                             await websocket.send_text(content)
-                            print("📤 Sent:", content)
+                            print(f"📤 Sent: {content}")
 
             except Exception as e:
-                print("🔥 GPT-4o failed:", e)
-                await websocket.send_text("Sorry, I'm having trouble responding right now.")
+                print("🔥 GPT Error:", e)
+                await websocket.send_text("Sorry, I'm having trouble right now.")
 
+    except WebSocketDisconnect:
+        print(f"🔒 WebSocket disconnected: {call_id}")
     except Exception as e:
-        print("❌ WebSocket error:", e)
-    finally:
+        print(f"❌ WebSocket error: {e}")
         await websocket.close()
-        print("🔒 WebSocket connection closed.")
+
